@@ -3,6 +3,11 @@
 Release History
 ---------------
 
+1.0.7 (2017-11-06)
+++++++++++++++++++
+
+* Fix xml namespace missing issue in SOAP body
+
 1.0.6 (2016-01-24)
 ++++++++++++++++++
 

@@ -41,8 +41,8 @@ setup(
     install_requires=['requests>=2.8.1'],
     url='http://bpannier.github.io/simpletr64/',
     license='Apache 2.0',
-    author='Benjamin Pannier',
-    author_email='sourcecode@ka.ro',
+    author='Bowei Yang',
+    author_email='@gmail.com',
     description='An easy to use UPnP TR64 protocol library',
     long_description=readme + '\n\n' + history,
 

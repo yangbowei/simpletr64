@@ -417,7 +417,7 @@ class DeviceTR64(object):
     <s:Header/>
     <s:Body>\n'''
 
-        body += "        <u:" + action + ' xmlns="' + namespace + '">\n'
+        body += "        <u:" + action + ' xmlns:u="' + namespace + '">\n'
 
         arguments = {}
 
