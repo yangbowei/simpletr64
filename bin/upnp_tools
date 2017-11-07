@@ -75,7 +75,7 @@ def discover(args):
     # add some more services to search for, just making sure every device answers
     services = ["ssdp:all", "urn:schemas-any-com:service:Any:1", "urn:dslforum-org:device:InternetGatewayDevice:1",
                 "urn:dslforum-org:device:LANDevice:1", "urn:dslforum-org:service:Layer3Forwarding:1",
-                "urn:schemas-upnp-org:device:basic:1"]
+                "urn:schemas-upnp-org:device:basic:1", "urn:microsoft.com:service:X_MS_MediaReceiverRegistrar:1"]
 
     # start a broad dicovery
     results = Discover.discover(service=services)
@@ -96,8 +96,11 @@ def discover(args):
 
     # iterate through all found hosts
     for host in hostResults.keys():
-        sortedResults = sorted(hostResults[host], key=lambda sortit: sortit["sortKey"], reverse=True)
+        if host is None:
+            print("Host: None, skipped.")
+            continue
 
+        sortedResults = sorted(hostResults[host], key=lambda sortit: sortit["sortKey"], reverse=True)
         output[host] = {}
         output[host]["services"] = {}
 
@@ -108,67 +111,75 @@ def discover(args):
         except:
             print("Host: " + host)
 
-        try:
-            # get TR64 multicast result for the given host to get XML definition url
-            result = Discover.discoverParticularHost(host, service=sortedResults[0]["result"].service,
-                                                     retries=1, proxies=proxies, timeout=args.timeout)
-        except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError) as e:
-            # could not download the gile
-            print("Host " + host + " failed: " + str(e))
-            result = None
+        hResults = hostResults[host][:]
+        for hostResult in hResults:
+            try:
+                # get TR64 multicast result for the given host to get XML definition url
+                result = Discover.discoverParticularHost(host, service=hostResult["result"].service,
+                                                         retries=1, proxies=proxies, timeout=args.timeout)
+            except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError) as e:
+                # could not download the gile
+                print("Host " + host + " failed: " + str(e))
+                result = None
 
-        if result is not None:
+            except ValueError as e:
+                print("Host " + host + " failed with wrong HTTP status code: " + str(e))
+                result = None
+
+            if result is None:
+                continue
+
             hostResults[host].append({"sortKey": Discover.rateServiceTypeInResult(result), "result": result})
 
-        # resort making sure we start with the important one first
-        sortedResults = sorted(hostResults[host], key=lambda sortit: sortit["sortKey"], reverse=True)
+            # resort making sure we start with the important one first
+            sortedResults = sorted(hostResults[host], key=lambda sortit: sortit["sortKey"], reverse=True)
 
-        # load all xml file definitions for this host
-        loadedXMLFile = []
-        for sResult in sortedResults:
-            if sResult["result"].location not in loadedXMLFile:
-                loadedXMLFile.append(sResult["result"].location)
+            # load all xml file definitions for this host
+            loadedXMLFile = []
+            for sResult in sortedResults:
+                if sResult["result"].location not in loadedXMLFile:
+                    loadedXMLFile.append(sResult["result"].location)
 
-                # get instance of device
-                box = DeviceTR64(sResult["result"].locationHost, sResult["result"].locationPort,
-                                 sResult["result"].locationProtocol)
-                box.username = args.user
-                box.password = args.password
-                box.httpProxy = args.http
-                box.httpsProxy = args.https
+                    # get instance of device
+                    box = DeviceTR64(sResult["result"].locationHost, sResult["result"].locationPort,
+                                     sResult["result"].locationProtocol)
+                    box.username = args.user
+                    box.password = args.password
+                    box.httpProxy = args.http
+                    box.httpsProxy = args.https
 
-                try:
-                    # load the device definitions from the location which was in the result
-                    box.loadDeviceDefinitions(sResult["result"].location, timeout=args.timeout)
-                except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError,
-                        requests.exceptions.ReadTimeout) as e:
-                    # it failed so we will have less service types later
-                    pass
+                    try:
+                        # load the device definitions from the location which was in the result
+                        box.loadDeviceDefinitions(sResult["result"].location, timeout=args.timeout)
+                    except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError,
+                            requests.exceptions.ReadTimeout) as e:
+                        # it failed so we will have less service types later
+                        pass
 
-                # add the device informations if it was in there already
-                if "informations" not in output[host].keys():
-                    output[host]["informations"] = box.deviceInformations
+                    # add the device informations if it was in there already
+                    if "informations" not in output[host].keys():
+                        output[host]["informations"] = box.deviceInformations
 
-                # build the full URL for convenient reasons
-                url = sResult["result"].locationProtocol + "://" + sResult["result"].locationHost + \
-                              ":" + str(sResult["result"].locationPort)
+                    # build the full URL for convenient reasons
+                    url = sResult["result"].locationProtocol + "://" + sResult["result"].locationHost + \
+                                  ":" + str(sResult["result"].locationPort)
 
-                # go through the services which we found in addition and add them as usual results
-                for service in box.deviceServiceDefinitions.keys():
-                    result = DiscoveryResponse.create(url + box.deviceServiceDefinitions[service]["scpdURL"],
-                                                      service=service)
-                    hostResults[host].append({"sortKey": Discover.rateServiceTypeInResult(result), "result": result})
+                    # go through the services which we found in addition and add them as usual results
+                    for service in box.deviceServiceDefinitions.keys():
+                        result = DiscoveryResponse.create(url + box.deviceServiceDefinitions[service]["scpdURL"],
+                                                          service=service)
+                        hostResults[host].append({"sortKey": Discover.rateServiceTypeInResult(result), "result": result})
 
-        # resort as we might have added services
-        sortedResults = sorted(hostResults[host], key=lambda sortit: sortit["sortKey"], reverse=True)
+            # resort as we might have added services
+            sortedResults = sorted(hostResults[host], key=lambda sortit: sortit["sortKey"], reverse=True)
 
-        # build the results together
-        for sResult in sortedResults:
-            if sResult["result"].service not in output[host]["services"].keys():
-                output[host]["services"][sResult["result"].service] = []
+            # build the results together
+            for sResult in sortedResults:
+                if sResult["result"].service not in output[host]["services"].keys():
+                    output[host]["services"][sResult["result"].service] = []
 
-            if sResult["result"].location not in output[host]["services"][sResult["result"].service]:
-                output[host]["services"][sResult["result"].service].append(sResult["result"].location)
+                if sResult["result"].location not in output[host]["services"][sResult["result"].service]:
+                    output[host]["services"][sResult["result"].service].append(sResult["result"].location)
 
     print("Results:")
     # print it out in a formated way
